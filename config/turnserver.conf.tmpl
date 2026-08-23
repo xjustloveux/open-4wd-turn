@@ -1,0 +1,59 @@
+# coturn 設定模板——${VAR} 佔位由部署端渲染（envsubst）。
+# 本檔為公版模板：不含任何真實 secret；樣本值見 deploy/.env.example。
+
+# ── 監聽 ──
+# 3478 同時服務 STUN（binding 無認證）與 TURN（allocate 需憑證）。
+listening-port=3478
+# TLS（turns:）可選：需要時解除下兩行註解並掛入憑證（k8s 以 secret 掛檔）。
+# TURN over TLS 由 coturn 自行終止——這不是 HTTP，ingress／反代幫不上忙。
+#tls-listening-port=5349
+#cert=/etc/coturn-tls/tls.crt
+#pkey=/etc/coturn-tls/tls.key
+
+# ── 身分與位址 ──
+realm=${REALM}
+# hostNetwork／host 模式下必填：coturn 需要知道自己的公網 IP 才能回報正確的 relay 位址。
+external-ip=${EXTERNAL_IP}
+
+# ── TURN 認證（REST API 短期憑證）──
+# 憑證由 signaling 服務以同一 shared secret 簽發（username=到期時戳:peerId、
+# credential=base64(HMAC-SHA1(secret, username))），coturn 本地驗證、無需回源。
+# 兩個部署的 secret 必須同值；輪替時兩邊同步換。
+use-auth-secret
+static-auth-secret=${TURN_SHARED_SECRET}
+
+# ── relay 埠段 ──
+# 每個中繼會話佔一個 UDP 埠；收窄範圍會直接封頂並發中繼數。
+min-port=${MIN_PORT}
+max-port=${MAX_PORT}
+
+# ── 安全必開 ──
+# 指紋讓 STUN/TURN 訊息帶完整性檢查欄位。
+fingerprint
+# 禁止中繼到多播位址。
+no-multicast-peers
+# 禁止把本伺服器當跳板中繼打進內網／保留段——這是 TURN 部署最重要的一道防線。
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=::1
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# ── 資源帽（TURN 流量＝真實頻寬成本的自我保護）──
+# 單一使用者同時 allocation 數上限。
+user-quota=${USER_QUOTA}
+# 全伺服器同時 allocation 數上限。
+total-quota=${TOTAL_QUOTA}
+# 單一會話頻寬上限（bytes/sec；0＝不限）。
+max-bps=${MAX_BPS}
+
+# ── 容器慣例 ──
+# 關閉 telnet 管理介面（容器內不需要、少一個攻擊面）。
+no-cli
+# 日誌走 stdout 交給容器平台收集。
+log-file=stdout

@@ -1,0 +1,34 @@
+{
+  "README.md": {
+    "ast_hash": "8308a2ff5d3ef3bacec42b9692c1eaea",
+    "semantic_hash": "8308a2ff5d3ef3bacec42b9692c1eaea"
+  },
+  "deploy/README.md": {
+    "ast_hash": "bdc83ca258c1989cc11e2aebd9b58f70",
+    "semantic_hash": "bdc83ca258c1989cc11e2aebd9b58f70"
+  },
+  "deploy/coturn-image.txt": {
+    "ast_hash": "67bc242deca947da41f443f0ebf2e11a",
+    "semantic_hash": "67bc242deca947da41f443f0ebf2e11a"
+  },
+  "deploy/docker-compose.yml": {
+    "ast_hash": "2842ca2613da8a0908f530e0eb1f0c75",
+    "semantic_hash": "2842ca2613da8a0908f530e0eb1f0c75"
+  },
+  "deploy/k8s/deployment.yaml": {
+    "ast_hash": "65b82b87d609fd2c5491277ef13c71ea",
+    "semantic_hash": "65b82b87d609fd2c5491277ef13c71ea"
+  },
+  "deploy/k8s/service.yaml": {
+    "ast_hash": "71f534d14439b3cc320bf764de62d48d",
+    "semantic_hash": "71f534d14439b3cc320bf764de62d48d"
+  },
+  "deploy/test_security_policy.py": {
+    "ast_hash": "56a733cbb8180a2758fb5a646e88e67f",
+    "semantic_hash": "56a733cbb8180a2758fb5a646e88e67f"
+  },
+  "deploy/test_workflow_contract.py": {
+    "ast_hash": "a99bedb517ae3a08b3d3b02404bdd334",
+    "semantic_hash": "a99bedb517ae3a08b3d3b02404bdd334"
+  }
+}

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open4wd-turn
+spec:
+  # relay 埠段直接綁節點網路——同節點只能一份，replicas 固定 1；
+  # 水平擴展屬多節點題（client 端多 urls），不在本模板範圍。
+  replicas: 1
+  selector:
+    matchLabels: { app: open4wd-turn }
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels: { app: open4wd-turn }
+    spec:
+      # TURN 需要整段 UDP relay 埠，一般 Service 模型不友善——hostNetwork 最單純。
+      # 多節點叢集請自行加 nodeSelector 釘住持有該公網 IP 的節點（external-ip 與節點綁定）。
+      hostNetwork: true
+      containers:
+        - name: coturn
+          # 權威版本見 deploy/coturn-image.txt；CI 鎖定 compose／k8s／文件引用同值。
+          image: coturn/coturn:4.14.0
+          args: ["-c", "/etc/coturn/turnserver.conf"]
+          # 上游映像未在本模板鎖定可驗證的數字 UID；README 記錄正式部署 overlay 的身分閘。
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - { name: conf, mountPath: /etc/coturn, readOnly: true }
+            # TLS 可選：啟用 turns: 時解除下行與 volumes 對應段的註解。
+            # TLS 掛載側移 /etc/coturn-tls、不巢於 conf Secret 唯讀掛載內（巢狀掛載點在唯讀父層可能建不出來）。
+            # - { name: tls, mountPath: /etc/coturn-tls, readOnly: true }
+          # 存活／就緒都以 3478 TCP 可連為準（STUN/TURN 同一 daemon 同一埠）。
+          livenessProbe:
+            tcpSocket: { port: 3478 }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket: { port: 3478 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          # Template 刻意不設 resources requests/limits：TURN 負載與部署規模強相關，
+          # 營運者應依自己的流量、成本與可用性政策設定。
+      volumes:
+        # 渲染後 conf 含 shared secret 真值，部署 workflow 以 Secret（非 ConfigMap）承載整份檔案。
+        - name: conf
+          secret: { secretName: open4wd-turn-conf }
+        # - name: tls
+        #   secret: { secretName: open4wd-turn-secret, items: [ { key: tls.crt, path: tls.crt }, { key: tls.key, path: tls.key } ] }

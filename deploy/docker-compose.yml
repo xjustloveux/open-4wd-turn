@@ -1,0 +1,14 @@
+# 單機自架路徑：Linux 主機為準（host 網路模式在 Docker Desktop 上支援有限）。
+# 用法：cp .env.example .env 填值 → 渲染 conf → docker compose up -d
+#   （envsubst 只讀「行程環境變數」、不會自己吃 .env——須先匯入再渲染，否則產出全空值 conf）
+#   set -a; . ./.env; set +a; envsubst < ../config/turnserver.conf.tmpl > ./turnserver.conf
+services:
+  coturn:
+    # 上游官方 image 精確釘版（禁 latest 浮動）；權威版本見 coturn-image.txt，CI 鎖定各引用同值。
+    image: coturn/coturn:4.14.0
+    restart: unless-stopped
+    # TURN relay 需要一段 UDP 埠，port 映射模式不友善——host 網路最單純。
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]

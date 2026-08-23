@@ -1,0 +1,110 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load pinned coturn image
+        run: echo "COTURN_IMAGE=$(cat deploy/coturn-image.txt)" >> "$GITHUB_ENV"
+      - name: Render template with sample vars
+        env:
+          TURN_SHARED_SECRET: ci-sample-secret
+          REALM: turn.ci.invalid
+          EXTERNAL_IP: 203.0.113.10
+          MIN_PORT: "49152"
+          MAX_PORT: "49252"
+          USER_QUOTA: "12"
+          TOTAL_QUOTA: "1200"
+          MAX_BPS: "0"
+          TURN_URLS: turn:turn.ci.invalid:3478
+        run: |
+          # envsubst 對未設變數靜默代空字串，所以先把「公版 .env 鍵集／模板佔位集／
+          # 本步樣本 env」三方一起比對；TURN_URLS 只供 signaling，明示為唯一例外。
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          env_keys = {
+              match.group(1)
+              for line in Path('deploy/.env.example').read_text(encoding='utf-8').splitlines()
+              if (match := re.fullmatch(r'([A-Z][A-Z0-9_]*)=.*', line))
+          }
+          template_text = '\n'.join(
+              line for line in Path('config/turnserver.conf.tmpl').read_text(encoding='utf-8').splitlines()
+              if not line.lstrip().startswith('#')
+          )
+          template_keys = set(re.findall(r'\$\{([A-Z][A-Z0-9_]*)\}', template_text))
+          if env_keys != template_keys | {'TURN_URLS'}:
+              raise SystemExit(f'.env/template key drift: env={sorted(env_keys)} template={sorted(template_keys)}')
+          missing_samples = sorted(env_keys - set(os.environ))
+          if missing_samples:
+              raise SystemExit(f'CI sample env missing: {missing_samples}')
+          PY
+          envsubst < config/turnserver.conf.tmpl > /tmp/turnserver.conf
+          # 後盾：此檢查只攔 ${X:-default} 類 envsubst 不處理的殘留語法。
+          if grep -q '\${' /tmp/turnserver.conf; then echo '渲染後仍有佔位殘留'; exit 1; fi
+      - name: Validate compose
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose -f deploy/docker-compose.yml config > /dev/null
+      - name: Validate k8s manifests (YAML parse)
+        run: |
+          for f in deploy/k8s/*.yaml .github/workflows/deploy.yml; do
+            python3 -c "import sys,yaml; list(yaml.safe_load_all(open(sys.argv[1])))" "$f"
+          done
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          path = Path('.github/workflows/deploy.yml')
+          text = path.read_text(encoding='utf-8')
+          assert 'workflow_dispatch:' in text
+          assert not re.search(r'^\s*push:', text, re.MULTILINE)
+          assert "vars.DEPLOY_ENABLED == 'true'" in text
+          for ref in re.findall(r'uses:\s*([^\s#]+)', text):
+              assert re.search(r'@[0-9a-f]{40}$', ref), ref
+          assert not Path('deploy/examples/deploy.yml').exists()
+          PY
+      - name: Validate container security policy
+        run: python3 -m unittest discover -s deploy -p 'test_*.py'
+      - name: Validate Graphify Release assets
+        run: node --test scripts/prepare-graphify-release.test.mjs
+      - name: Live smoke against rendered config
+        run: |
+          # 真 coturn 起起來、用 image 內建工具驗兩件事——組態能跑＋REST auth 驗得過。
+          # 正式 conf 以 denied-peer-ip 封鎖私網／loopback 全段，而 uclient -y 的 client-to-client peer
+          # 正是 coturn 自己的 relay 位址（＝runner 介面 IP、必為私網段），不開洞會在 ChannelBind 吃 403。
+          # 洞只以 CLI 旗標給 smoke 這一個容器、只針對 runner 自身位址；掛載的渲染 conf 與模板一字不改。
+          SMOKE_HOLES=(--allowed-peer-ip=127.0.0.1)
+          for ip in $(hostname -I); do SMOKE_HOLES+=("--allowed-peer-ip=$ip"); done
+          docker run -d --name coturn --network host \
+            -v /tmp/turnserver.conf:/etc/coturn/turnserver.conf:ro \
+            "$COTURN_IMAGE" -c /etc/coturn/turnserver.conf "${SMOKE_HOLES[@]}"
+          sleep 3
+          # server log 先印再跑 client 斷言——斷言失敗時步驟輸出裡已有可診斷的 server 端 log。
+          docker logs coturn | tail -20
+          docker run --rm --network host "$COTURN_IMAGE" \
+            turnutils_stunclient 127.0.0.1
+          # 此處直接用 -W 傳 secret 是安全的：值是公開的 CI 樣本、不是任何真實密鑰。
+          # 正式部署不可照抄——見 .github/workflows/deploy.yml 的 smoke，那裡改為自簽
+          # 300 秒短期憑證，長期 secret 不進命令列。
+          docker run --rm --network host "$COTURN_IMAGE" \
+            turnutils_uclient -W ci-sample-secret -y 127.0.0.1
+      # 收尾獨立成步＋if: always()——smoke 斷言失敗也不漏容器回收；容器不存在時亦不報錯。
+      - name: Cleanup smoke container
+        if: always()
+        run: docker rm -f coturn || true
+
+  # 官方上游 required check；不成為 compose、smoke 或部署流程的 needs。
+  comment-quality:
+    if: github.repository == 'xjustloveux/open-4wd-turn'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 scripts/comment_quality_self_test.py
+      - run: python3 scripts/comment_hook_runner_self_test.py
+      - run: python3 scripts/comment_quality.py

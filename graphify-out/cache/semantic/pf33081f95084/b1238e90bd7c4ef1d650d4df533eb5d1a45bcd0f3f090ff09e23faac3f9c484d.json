@@ -1,0 +1,74 @@
+{
+  "nodes": [
+    {
+      "id": "deploy_k8s_service_service_manifest",
+      "label": "coturn Kubernetes Service manifest",
+      "file_type": "document",
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "deploy_k8s_service_open4wd_turn_service",
+      "label": "open4wd-turn Service",
+      "file_type": "concept",
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "With hostNetwork, traffic bypasses this Service; it exists for port declaration and in-cluster discovery."
+    },
+    {
+      "id": "deploy_k8s_service_no_client_endpoint",
+      "label": "No default client endpoint",
+      "file_type": "concept",
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "The Service intentionally does not establish a client default endpoint."
+    }
+  ],
+  "edges": [
+    {
+      "source": "deploy_k8s_service_service_manifest",
+      "target": "deploy_k8s_service_open4wd_turn_service",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_k8s_service_open4wd_turn_service",
+      "target": "deploy_k8s_deployment_host_network",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_k8s_service_no_client_endpoint",
+      "target": "deploy_k8s_service_open4wd_turn_service",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/k8s/service.yaml",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

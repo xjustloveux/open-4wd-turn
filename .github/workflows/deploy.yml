@@ -1,0 +1,95 @@
+name: Deploy operator fork
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operator-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      MIN_PORT: ${{ vars.MIN_PORT || '49152' }}
+      MAX_PORT: ${{ vars.MAX_PORT || '65535' }}
+      USER_QUOTA: ${{ vars.USER_QUOTA || '12' }}
+      TOTAL_QUOTA: ${{ vars.TOTAL_QUOTA || '1200' }}
+      MAX_BPS: ${{ vars.MAX_BPS || '0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load pinned coturn image
+        run: echo "COTURN_IMAGE=$(cat deploy/coturn-image.txt)" >> "$GITHUB_ENV"
+      - name: Fail closed on required settings
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          REALM: ${{ vars.REALM }}
+          EXTERNAL_IP: ${{ vars.EXTERNAL_IP }}
+          TURN_URLS: ${{ vars.TURN_URLS }}
+        run: |
+          : "${KUBE_CONFIG:?}" "${TURN_SHARED_SECRET:?}" "${REALM:?}" "${EXTERNAL_IP:?}" "${TURN_URLS:?}"
+          python3 - <<'PY'
+          import ipaddress, os, re
+          if len(os.environ['TURN_SHARED_SECRET']) < 32: raise SystemExit('TURN_SHARED_SECRET must contain at least 32 characters')
+          if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?', os.environ['REALM']): raise SystemExit('REALM must be a DNS name')
+          ipaddress.ip_address(os.environ['EXTERNAL_IP'])
+          urls = os.environ['TURN_URLS'].split(',')
+          if any(not re.fullmatch(r'turns?:\S+', value) for value in urls): raise SystemExit('every TURN_URLS entry must use turn: or turns:')
+          lo, hi = int(os.environ['MIN_PORT']), int(os.environ['MAX_PORT'])
+          if not 1 <= lo <= hi <= 65535: raise SystemExit('invalid relay port range')
+          for key in ('USER_QUOTA', 'TOTAL_QUOTA', 'MAX_BPS'):
+              if int(os.environ[key]) < 0: raise SystemExit(f'{key} must be non-negative')
+          PY
+
+      - name: Render turnserver.conf
+        env:
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          REALM: ${{ vars.REALM }}
+          EXTERNAL_IP: ${{ vars.EXTERNAL_IP }}
+        run: |
+          envsubst < config/turnserver.conf.tmpl > turnserver.conf
+          if grep -q '\${' turnserver.conf; then echo '渲染後仍有佔位殘留'; exit 1; fi
+
+      - name: Apply to GKE
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          umask 077
+          printf '%s' "$KUBE_CONFIG" > kubeconfig
+          export KUBECONFIG="$PWD/kubeconfig"
+          # 渲染後 conf 含 static-auth-secret 真值，整份以 Secret 承載、不走 ConfigMap；
+          # deployment 把它掛成 /etc/coturn/turnserver.conf。TLS 用的 open4wd-turn-secret 由營運者手動維護。
+          kubectl create secret generic open4wd-turn-conf \
+            --from-file=turnserver.conf=turnserver.conf \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f deploy/k8s/deployment.yaml
+          kubectl apply -f deploy/k8s/service.yaml
+          kubectl rollout restart deployment/open4wd-turn
+          kubectl rollout status deployment/open4wd-turn --timeout=120s
+
+      - name: Post-deploy smoke
+        env:
+          REALM: ${{ vars.REALM }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+        run: |
+          TURN_USER="$(( $(date +%s) + 300 )):smoke"
+          TURN_CRED="$(python3 -c 'import base64, hashlib, hmac, os, sys; print(base64.b64encode(hmac.new(os.environ["TURN_SHARED_SECRET"].encode(), sys.argv[1].encode(), hashlib.sha1).digest()).decode())' "$TURN_USER")"
+          for attempt in {1..6}; do
+            if docker run --rm "$COTURN_IMAGE" turnutils_stunclient "$REALM" && \
+               docker run --rm "$COTURN_IMAGE" turnutils_uclient -u "$TURN_USER" -w "$TURN_CRED" -y -c "$REALM"; then
+              exit 0
+            fi
+            echo "STUN/TURN smoke attempt $attempt/6 failed; waiting for network propagation."
+            sleep 10
+          done
+          exit 1
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f kubeconfig

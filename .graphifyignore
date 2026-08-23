@@ -1,0 +1,7 @@
+# graphify 白名單（include 清單制：先全排除、逐項 re-include）
+# 範圍依 文檔工程改善計畫 項 10.3：config 模板＋deploy＋README；
+# 設計／計畫／進度類 md（.superpowers/、docs/superpowers/）不入圖。config 入 repo＝可審計。
+/*
+!/config/
+!/deploy/
+!/README.md
