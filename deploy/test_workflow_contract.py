@@ -40,9 +40,10 @@ class WorkflowContractTest(unittest.TestCase):
             "開發中",
             "主遊戲尚未正式公開",
             "[MIT](LICENSE)",
-            "https://github.com/xjustloveux/open-4wd/security/policy",
+            "https://github.com/xjustloveux/open-4wd-specs/blob/master/%E8%B3%87%E5%AE%89%E8%A6%8F%E7%AF%84.md#101-reporting",
         ):
             self.assertIn(required, readme)
+        self.assertNotIn("https://github.com/xjustloveux/open-4wd/security/policy", readme)
         self.assertNotRegex(readme, r"部署 repo|deployment repo")
         self.assertIn("營運者 fork", readme)
 
@@ -58,6 +59,25 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn("--jq '.immutable'", workflow)
         self.assertIn('if [ "${immutable}" != "true" ]; then', workflow)
         self.assertNotIn("immutable-releases", workflow)
+
+    def test_graphify_specs_token_uses_client_id_without_legacy_app_id(self) -> None:
+        workflow = (ROOT / ".github/workflows/graphify-release.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "client-id: ${{ vars.OPEN4WD_GRAPH_APP_CLIENT_ID }}",
+            workflow,
+        )
+        self.assertNotRegex(workflow, r"^\s+app-id:")
+        self.assertNotIn("OPEN4WD_GRAPH_APP_ID", workflow)
+
+    def test_graphify_release_replays_complete_semantic_cache_through_runner(self) -> None:
+        workflow = (ROOT / ".github/workflows/graphify-release.yml").read_text(encoding="utf-8")
+        self.assertIn("node scripts/run-graphify-release.mjs", workflow)
+        self.assertNotRegex(workflow, r"graphify extract[^\n]*(?:--code-only|--no-cluster)")
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "node --test scripts/prepare-graphify-release.test.mjs scripts/run-graphify-release.test.mjs",
+            ci,
+        )
 
     def test_comment_quality_is_official_only_and_not_a_deploy_dependency(self) -> None:
         ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")

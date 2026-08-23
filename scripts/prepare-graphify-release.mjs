@@ -1,40 +1,44 @@
-import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { Buffer } from "node:buffer";
-import console from "node:console";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { Buffer } from 'node:buffer';
+import console from 'node:console';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+import {
+  buildViewerProjection,
+  renderViewerData,
+  renderViewerIndex,
+  VIEWER_ENGINE,
+  VIEWER_THRESHOLD,
+} from './graphify-viewer.mjs';
 
 const SHA = /^[0-9a-f]{40}$/u;
-const REPOSITORY =
-  /^xjustloveux\/(open-4wd|open-4wd-pinning|open-4wd-signaling|open-4wd-turn)$/u;
-const GRAPHIFY_VERSION = "0.9.25";
+const REPOSITORY = /^xjustloveux\/(open-4wd|open-4wd-pinning|open-4wd-signaling|open-4wd-turn)$/u;
+const GRAPHIFY_VERSION = '0.9.25';
 const ZIP_UTF8 = 0x0800;
 const crcTable = Array.from({ length: 256 }, (_, value) => {
   let current = value;
   for (let bit = 0; bit < 8; bit += 1)
-    current =
-      (current & 1) === 1 ? 0xedb88320 ^ (current >>> 1) : current >>> 1;
+    current = (current & 1) === 1 ? 0xedb88320 ^ (current >>> 1) : current >>> 1;
   return current >>> 0;
 });
 const crc32 = (bytes) => {
   let value = 0xffffffff;
-  for (const byte of bytes)
-    value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
+  for (const byte of bytes) value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
   return (value ^ 0xffffffff) >>> 0;
 };
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 function zipStore(entries) {
   const locals = [];
   const centrals = [];
   let offset = 0;
   for (const entry of entries) {
-    if (entry.bytes.length > 0xffffffff)
-      throw new Error(`ZIP32 member too large: ${entry.name}`);
-    const name = Buffer.from(entry.name, "utf8");
+    if (entry.bytes.length > 0xffffffff) throw new Error(`ZIP32 member too large: ${entry.name}`);
+    const name = Buffer.from(entry.name, 'utf8');
     const checksum = crc32(entry.bytes);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
@@ -74,28 +78,6 @@ function zipStore(entries) {
   return Buffer.concat([...locals, directory, end]);
 }
 
-function renderIndex(repository, nodes, edges) {
-  const title = repository.split("/")[1];
-  return Buffer.from(
-    `<!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} Graphify</title>
-<style>body{font:16px system-ui;max-width:76rem;margin:auto;padding:2rem;background:#0f172a;color:#e2e8f0}input{width:100%;padding:.7rem;background:#1e293b;color:inherit;border:1px solid #475569}li{margin:.5rem 0}code{color:#7dd3fc}.muted{color:#94a3b8}</style>
-<h1>${title} knowledge graph</h1>
-<p class="muted">Derived from Graphify ${GRAPHIFY_VERSION}; source remains authoritative.</p>
-<p><strong>${nodes.toLocaleString("en-US")}</strong> nodes · <strong>${edges.toLocaleString("en-US")}</strong> edges</p>
-<input id="q" placeholder="Filter node label or id"><ol id="results"></ol>
-<script type="module">
-const graph=await fetch('./graph.json').then(r=>r.json());
-const q=document.querySelector('#q'),out=document.querySelector('#results');
-function draw(){const term=q.value.trim().toLowerCase();const rows=graph.nodes.filter(n=>!term||String(n.label??n.name??n.id).toLowerCase().includes(term)).slice(0,200);out.replaceChildren(...rows.map(n=>{const li=document.createElement('li');const code=document.createElement('code');code.textContent=String(n.label??n.name??n.id);li.append(code);return li}))}
-q.addEventListener('input',draw);draw();
-</script>
-`,
-    "utf8",
-  );
-}
-
 function validatePublicGraph(graph) {
   const forbiddenText = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
@@ -104,39 +86,30 @@ function validatePublicGraph(graph) {
     /\/(?:Users|home)\/[^/\s]+/u,
   ];
   const visit = (value) => {
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       for (const pattern of forbiddenText)
         if (pattern.test(value))
-          throw new Error(
-            "Graphify graph contains private path or credential-shaped content",
-          );
+          throw new Error('Graphify graph contains private path or credential-shaped content');
     } else if (Array.isArray(value)) {
       for (const item of value) visit(item);
-    } else if (value && typeof value === "object") {
+    } else if (value && typeof value === 'object') {
       for (const item of Object.values(value)) visit(item);
     }
   };
   visit(graph);
   for (const node of graph.nodes) {
     const source = node?.source_file;
-    if (typeof source !== "string" || source === "") continue;
-    const canonical = source.replaceAll("\\", "/");
+    if (typeof source !== 'string' || source === '') continue;
+    const canonical = source.replaceAll('\\', '/');
     if (
-      canonical.startsWith("/") ||
-      canonical.startsWith("../") ||
-      canonical.includes("/../") ||
+      canonical.startsWith('/') ||
+      canonical.startsWith('../') ||
+      canonical.includes('/../') ||
       canonical
-        .split("/")
-        .some(
-          (segment) =>
-            segment === ".git" ||
-            segment === ".env" ||
-            segment === "graphify-out",
-        )
+        .split('/')
+        .some((segment) => segment === '.git' || segment === '.env' || segment === 'graphify-out')
     )
-      throw new Error(
-        `Graphify graph contains a non-public source path: ${source}`,
-      );
+      throw new Error(`Graphify graph contains a non-public source path: ${source}`);
   }
 }
 
@@ -148,36 +121,42 @@ export async function prepareGraphifyRelease({
   generatedAt,
 }) {
   if (!REPOSITORY.test(repository))
-    throw new Error(
-      "repository is outside the fixed Open4WD product allowlist",
-    );
+    throw new Error('repository is outside the fixed Open4WD product allowlist');
   const normalizedSha = String(sourceSha).trim().toLowerCase();
   if (!SHA.test(normalizedSha))
-    throw new Error(
-      "source SHA must be exactly 40 lowercase hexadecimal characters",
-    );
+    throw new Error('source SHA must be exactly 40 lowercase hexadecimal characters');
   const generated = new Date(generatedAt);
-  if (
-    !Number.isFinite(generated.valueOf()) ||
-    generated.toISOString() !== generatedAt
-  )
-    throw new Error("generatedAt must be a canonical ISO timestamp");
+  if (!Number.isFinite(generated.valueOf()) || generated.toISOString() !== generatedAt)
+    throw new Error('generatedAt must be a canonical ISO timestamp');
   const graphBytes = await readFile(resolve(graphPath));
-  const graph = JSON.parse(graphBytes.toString("utf8"));
+  const graph = JSON.parse(graphBytes.toString('utf8'));
   const links = Array.isArray(graph.links) ? graph.links : graph.edges;
   if (!Array.isArray(graph.nodes) || !Array.isArray(links))
-    throw new Error("Graphify graph must contain nodes and links/edges arrays");
+    throw new Error('Graphify graph must contain nodes and links/edges arrays');
   validatePublicGraph(graph);
   const output = resolve(outputDirectory);
   await mkdir(output, { recursive: true });
-  if ((await readdir(output)).length > 0)
-    throw new Error("Graphify release output must be empty");
-  const indexBytes = renderIndex(repository, graph.nodes.length, links.length);
+  if ((await readdir(output)).length > 0) throw new Error('Graphify release output must be empty');
+  const projection = buildViewerProjection({ repository, nodes: graph.nodes, edges: links });
+  const indexBytes = renderViewerIndex({
+    repository,
+    nodeCount: graph.nodes.length,
+    edgeCount: links.length,
+    mode: projection.mode,
+  });
+  const viewerDataBytes = renderViewerData(projection);
+  const visNetworkBytes = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), 'vendor', 'vis-network.min.js'),
+  );
+  if (!visNetworkBytes.subarray(0, 1_024).toString('utf8').includes('@version 9.1.6'))
+    throw new Error('vendored vis-network asset does not match viewer engine 9.1.6');
   const siteZip = zipStore([
-    { name: "graph.json", bytes: graphBytes },
-    { name: "index.html", bytes: indexBytes },
+    { name: 'graph.json', bytes: graphBytes },
+    { name: 'index.html', bytes: indexBytes },
+    { name: 'viewer-data.js', bytes: viewerDataBytes },
+    { name: 'vis-network.min.js', bytes: visNetworkBytes },
   ]);
-  await writeFile(join(output, "graphify-site.zip"), siteZip);
+  await writeFile(join(output, 'graphify-site.zip'), siteZip);
   const manifest = {
     schemaVersion: 1,
     repository,
@@ -186,49 +165,40 @@ export async function prepareGraphifyRelease({
     graphifyVersion: GRAPHIFY_VERSION,
     generatedAt,
     graph: { nodes: graph.nodes.length, edges: links.length },
-    assets: [
-      {
-        name: "graphify-site.zip",
-        size: siteZip.length,
-        sha256: sha256(siteZip),
-      },
-    ],
+    viewer: {
+      mode: projection.mode,
+      threshold: VIEWER_THRESHOLD,
+      engine: VIEWER_ENGINE,
+      data: 'viewer-data.js',
+    },
+    assets: [{ name: 'graphify-site.zip', size: siteZip.length, sha256: sha256(siteZip) }],
   };
-  await writeFile(
-    join(output, "graphify-manifest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  await writeFile(join(output, 'graphify-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const args = process.argv.slice(2);
   const option = (name, fallback) => {
     const index = args.indexOf(name);
     return index < 0 ? fallback : args[index + 1];
   };
-  const explicitSourceSha = option("--source-sha", null);
+  const explicitSourceSha = option('--source-sha', null);
   const sourceSha =
     explicitSourceSha ??
-    execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: root,
-      encoding: "utf8",
-    }).trim();
-  const explicitGeneratedAt = option("--generated-at", null);
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const explicitGeneratedAt = option('--generated-at', null);
   const generatedAt =
     explicitGeneratedAt ??
-    execFileSync("git", ["show", "-s", "--format=%cI", sourceSha], {
+    execFileSync('git', ['show', '-s', '--format=%cI', sourceSha], {
       cwd: root,
-      encoding: "utf8",
+      encoding: 'utf8',
     }).trim();
   const manifest = await prepareGraphifyRelease({
-    graphPath: option("--graph", join(root, "graphify-out", "graph.json")),
-    outputDirectory: option("--output", join(root, "graphify-release")),
-    repository: option("--repository", process.env.GITHUB_REPOSITORY),
+    graphPath: option('--graph', join(root, 'graphify-out', 'graph.json')),
+    outputDirectory: option('--output', join(root, 'graphify-release')),
+    repository: option('--repository', process.env.GITHUB_REPOSITORY),
     sourceSha,
     generatedAt: new Date(generatedAt).toISOString(),
   });
