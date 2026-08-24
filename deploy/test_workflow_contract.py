@@ -90,6 +90,10 @@ class WorkflowContractTest(unittest.TestCase):
         deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
         self.assertNotIn("comment_quality", deploy)
 
+    def test_ci_runs_repository_local_issue_maintenance_contracts(self) -> None:
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn("node --test scripts/issue-maintenance.test.mjs", ci)
+
     def test_deploy_defaults_are_declared_once_at_job_scope(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
         job_header = workflow[: workflow.index("    steps:")]
