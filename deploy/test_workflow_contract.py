@@ -34,6 +34,18 @@ class WorkflowContractTest(unittest.TestCase):
         for target in targets:
             self.assertTrue((readme_path.parent / target).exists(), target)
 
+    def test_root_readme_uses_primary_ci_and_repo_local_mit_badges(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "[![CI](https://github.com/xjustloveux/open-4wd-turn/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/xjustloveux/open-4wd-turn/actions/workflows/ci.yml)",
+            readme,
+        )
+        self.assertIn("[![License: MIT](docs/badges/license-mit.svg)](LICENSE)", readme)
+
+        license_badge = (ROOT / "docs/badges/license-mit.svg").read_text(encoding="utf-8")
+        self.assertRegex(license_badge, r'<svg[^>]+role="img"[^>]+aria-label="license: MIT"')
+        self.assertNotRegex(license_badge, r'<(?:script|image)\b|\bhref=["\']https?:')
+
     def test_root_readme_is_a_prelaunch_public_entrypoint(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for required in (

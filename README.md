@@ -1,5 +1,7 @@
 # open-4wd-turn
 
+[![CI](https://github.com/xjustloveux/open-4wd-turn/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/xjustloveux/open-4wd-turn/actions/workflows/ci.yml) [![License: MIT](docs/badges/license-mit.svg)](LICENSE)
+
 Open4WD 的 STUN／TURN 節點公版 Template。服務本體為第三方開源
 [coturn](https://github.com/coturn/coturn)（BSD）；本 repo 不自 build 服務程式，只提供設定、
 部署 manifests 與驗證工具。
