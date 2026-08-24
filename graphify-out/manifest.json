@@ -28,7 +28,7 @@
     "semantic_hash": "56a733cbb8180a2758fb5a646e88e67f"
   },
   "deploy/test_workflow_contract.py": {
-    "ast_hash": "315d6c08dcaeed7d14951d6a75fc2f9b",
-    "semantic_hash": "315d6c08dcaeed7d14951d6a75fc2f9b"
+    "ast_hash": "2d56c73c7e73e767f24d56f0f7d727ae",
+    "semantic_hash": "2d56c73c7e73e767f24d56f0f7d727ae"
   }
 }

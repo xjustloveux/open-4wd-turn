@@ -73,6 +73,8 @@ jobs:
         run: python3 -m unittest discover -s deploy -p 'test_*.py'
       - name: Validate Graphify Release assets
         run: node --test scripts/prepare-graphify-release.test.mjs scripts/run-graphify-release.test.mjs
+      - name: Validate issue maintenance
+        run: node --test scripts/issue-maintenance.test.mjs
       - name: Live smoke against rendered config
         run: |
           # 真 coturn 起起來、用 image 內建工具驗兩件事——組態能跑＋REST auth 驗得過。
